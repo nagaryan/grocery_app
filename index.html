@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Grocery Lister</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.7/dayjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
@@ -94,6 +94,11 @@
                 <button id="add-list-btn" class="w-full text-blue-500 hover:text-blue-600 font-semibold py-2 px-4 rounded-lg bg-blue-500/10">
                     Add List
                 </button>
+                 <button id="theme-toggle-btn" class="w-full text-gray-600 dark:text-gray-400 hover:text-yellow-500 font-semibold py-2 px-4 rounded-lg hover:bg-yellow-500/10 flex items-center justify-center space-x-2">
+                    <svg id="theme-icon-sun" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <svg id="theme-icon-moon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                    <span id="theme-toggle-text">Light Mode</span>
+                </button>
             </div>
         </aside>
 
@@ -103,11 +108,13 @@
                 <button id="menu-btn" class="md:hidden text-gray-600 dark:text-gray-400">
                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                 </button>
-                <div class="flex items-center gap-2 min-w-0">
+                <div class="flex items-center gap-2 min-w-0 flex-1">
                      <span id="current-list-color-dot" class="w-4 h-4 rounded-full bg-blue-500 flex-shrink-0"></span>
-                     <h2 id="current-list-title" class="text-2xl font-bold truncate">Groceries</h2>
+                     <h2 id="current-list-title" class="text-xl md:text-2xl font-bold">Groceries</h2>
                 </div>
-                <button id="start-shopping-btn" class="bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition-colors flex-shrink-0">Start Shopping</button>
+                <button id="start-shopping-btn" class="bg-green-500 text-white font-bold p-2 rounded-lg hover:bg-green-600 transition-colors flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                </button>
             </header>
             <div id="items-container" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-3">
                 <!-- Item items will be injected here -->
@@ -353,6 +360,10 @@
             const itemsContainer = document.getElementById('items-container');
             
             const addListBtn = document.getElementById('add-list-btn');
+            const themeToggleBtn = document.getElementById('theme-toggle-btn');
+            const themeIconSun = document.getElementById('theme-icon-sun');
+            const themeIconMoon = document.getElementById('theme-icon-moon');
+            const themeToggleText = document.getElementById('theme-toggle-text');
             
             const selectListTypeModal = document.getElementById('select-list-type-modal');
             const selectGroceryListBtn = document.getElementById('select-grocery-list-btn');
@@ -468,7 +479,8 @@
             
             function render() {
                 if (!state.activeListId && state.lists.length > 0) {
-                    state.activeListId = state.lists[0].id;
+                    const sortedLists = state.lists.sort((a,b) => b.order - a.order);
+                    state.activeListId = sortedLists[0].id;
                 }
                 if (state.activeListId) {
                     ensureUncategorizedCategory();
@@ -498,7 +510,7 @@
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                                     </span>
                                     <span class="w-3 h-3 rounded-full ${COLORS[list.color] || COLORS['blue']} flex-shrink-0"></span>
-                                    <span class="list-name-text font-semibold truncate ${isActive ? 'text-blue-500' : ''}">${list.name}</span>
+                                    <span class="list-name-text font-semibold ${isActive ? 'text-blue-500' : ''}">${list.name}</span>
                                 </div>
                                 <div class="list-actions flex items-center">
                                     <span class="text-gray-500 dark:text-gray-400 font-semibold mr-2">${count}</span>
@@ -633,7 +645,8 @@
                 state.categories = state.categories.filter(c => c.listId !== listId);
 
                 if (state.activeListId === listId) {
-                    state.activeListId = state.lists.length > 0 ? state.lists[0].id : null;
+                    const sortedLists = state.lists.sort((a,b) => b.order - a.order);
+                    state.activeListId = sortedLists.length > 0 ? sortedLists[0].id : null;
                 }
                 saveData();
                 render();
@@ -1258,6 +1271,21 @@
                 });
             }
 
+            function updateTheme(isDark) {
+                const root = document.documentElement;
+                if (isDark) {
+                    root.classList.add('dark');
+                    themeIconSun.classList.add('hidden');
+                    themeIconMoon.classList.remove('hidden');
+                    themeToggleText.textContent = 'Light Mode';
+                } else {
+                    root.classList.remove('dark');
+                    themeIconSun.classList.remove('hidden');
+                    themeIconMoon.classList.add('hidden');
+                    themeToggleText.textContent = 'Dark Mode';
+                }
+            }
+
             // --- Event Listeners & Init ---
             menuBtn.addEventListener('click', () => sidebar.classList.add('open'));
             closeSidebarBtn.addEventListener('click', () => sidebar.classList.remove('open'));
@@ -1287,7 +1315,7 @@
                 for (let i = 0; i < 4; i++) {
                     const sunday = firstSunday.add(i * 7, 'days');
                     const isSuggested = i === 0;
-                    const label = isSuggested ? (dayjs().day() === 0 ? 'Today: ' : 'Upcoming: ') : '';
+                    const label = isSuggested ? (dayjs().isSame(sunday, 'day') ? 'Today: ' : 'Upcoming: ') : '';
                     dateOptionsHTML += `
                         <button class="date-option p-2 border rounded-md text-sm ${isSuggested ? 'selected' : ''}" data-date="${sunday.format('YYYY-MM-DD')}">
                            ${label}${sunday.format('MMM D')}
@@ -1486,12 +1514,24 @@
                 checkoutModal.classList.remove('flex');
             });
 
-            // Initial Load
+            themeToggleBtn.addEventListener('click', () => {
+                const isDark = document.documentElement.classList.toggle('dark');
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                updateTheme(isDark);
+            });
+
+            // --- Initial Load ---
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                updateTheme(savedTheme === 'dark');
+            } else {
+                updateTheme(true); // Default to dark
+            }
+
             loadData();
             render();
         });
     </script>
 </body>
 </html>
-
 
