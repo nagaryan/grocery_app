@@ -1,0 +1,1496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grocery Lister</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.7/dayjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .sidebar {
+            transition: transform 0.3s ease-in-out;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+        .modal-backdrop {
+            background-color: rgba(0,0,0,0.5);
+        }
+        .completed-text {
+            text-decoration: line-through;
+            color: #9ca3af;
+        }
+        /* Hide file input */
+        .scan-input {
+            display: none;
+        }
+        .item-actions, .list-actions {
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out;
+        }
+        .item-container:hover .item-actions, .list-item:hover .list-actions {
+            opacity: 1;
+        }
+        .category-editor-item:hover .drag-handle {
+            opacity: 1;
+        }
+        .dragging {
+            opacity: 0.5;
+            background: #c7d2fe;
+        }
+        .drag-over {
+            border-top: 2px solid #4f46e5;
+        }
+        .color-palette .color-option, .date-option {
+            transition: transform 0.1s ease-in-out;
+        }
+        .color-palette .color-option.selected {
+            transform: scale(1.2);
+            box-shadow: 0 0 0 3px white, 0 0 0 5px var(--tw-color-blue-500);
+        }
+        .date-option.selected {
+            background-color: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        .list-drag-handle {
+            opacity: 0;
+            cursor: move;
+        }
+        .list-item:hover .list-drag-handle {
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-black text-gray-900 dark:text-gray-100">
+
+    <div id="app-container" class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar absolute md:relative z-20 w-64 md:w-72 bg-gray-200 dark:bg-gray-900/70 backdrop-blur-lg border-r border-gray-300 dark:border-gray-700 p-4 shrink-0 h-full flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-2xl font-bold">My Lists</h1>
+                <button id="close-sidebar-btn" class="md:hidden text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div id="my-lists" class="space-y-1 flex-grow overflow-y-auto"></div>
+
+            <div class="space-y-2 pt-2">
+                 <button id="manage-categories-btn" class="w-full text-gray-600 dark:text-gray-400 hover:text-blue-500 font-semibold py-2 px-4 rounded-lg hover:bg-blue-500/10 flex items-center justify-center space-x-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    <span>Manage Categories</span>
+                </button>
+                <button id="add-list-btn" class="w-full text-blue-500 hover:text-blue-600 font-semibold py-2 px-4 rounded-lg bg-blue-500/10">
+                    Add List
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main id="main-view" class="relative flex-1 flex flex-col overflow-hidden">
+            <header class="flex items-center justify-between p-4 border-b border-gray-300 dark:border-gray-700 bg-gray-100/80 dark:bg-black/80 backdrop-blur-sm">
+                <button id="menu-btn" class="md:hidden text-gray-600 dark:text-gray-400">
+                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
+                <div class="flex items-center gap-2 min-w-0">
+                     <span id="current-list-color-dot" class="w-4 h-4 rounded-full bg-blue-500 flex-shrink-0"></span>
+                     <h2 id="current-list-title" class="text-2xl font-bold truncate">Groceries</h2>
+                </div>
+                <button id="start-shopping-btn" class="bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition-colors flex-shrink-0">Start Shopping</button>
+            </header>
+            <div id="items-container" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-3">
+                <!-- Item items will be injected here -->
+            </div>
+            <button id="add-new-item-fab" class="absolute bottom-6 right-6 bg-blue-500 hover:bg-blue-600 text-white font-bold w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform transform hover:scale-110">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6"></path></svg>
+            </button>
+        </main>
+
+        <!-- Grocery Mode View -->
+        <div id="grocery-mode-view" class="hidden flex-1 flex-col overflow-hidden">
+            <header class="flex items-center justify-between p-4 border-b border-gray-300 dark:border-gray-700 bg-gray-100/80 dark:bg-black/80 backdrop-blur-sm">
+                <h2 id="grocery-list-title" class="text-2xl font-bold text-green-500">Shopping...</h2>
+                <button id="exit-shopping-btn" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600 transition-colors">Exit</button>
+            </header>
+            <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
+                <div id="to-buy-list" class="w-full md:w-1/2 flex flex-col overflow-y-auto p-4 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700">
+                    <div class="flex justify-between items-baseline mb-4">
+                        <h3 class="text-xl font-bold">To Buy</h3>
+                        <div class="text-lg font-semibold text-gray-500 dark:text-gray-400">
+                            <span>Est. Total:</span>
+                            <span id="to-buy-total-amount">₱0.00</span>
+                        </div>
+                    </div>
+                    <div id="to-buy-items-container" class="space-y-4 flex-1"></div>
+                </div>
+                <div class="w-full md:w-1/2 flex flex-col overflow-y-auto p-4">
+                    <h3 class="text-xl font-bold mb-4">My Basket</h3>
+                    <div id="basket-items-container" class="space-y-3 flex-1"></div>
+                    <div class="mt-4 pt-4 border-t border-gray-300 dark:border-gray-700">
+                        <div class="flex justify-between items-center text-2xl font-bold">
+                            <span>Total:</span>
+                            <span id="total-amount">₱0.00</span>
+                        </div>
+                        <button id="checkout-btn" class="w-full mt-4 bg-blue-500 text-white font-bold py-3 rounded-lg hover:bg-blue-600 transition-colors">Ready for Payment</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Select List Type Modal -->
+    <div id="select-list-type-modal" class="fixed inset-0 z-30 hidden items-center justify-center modal-backdrop">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm m-4 p-6 space-y-4">
+            <h3 class="text-xl font-bold">What kind of list?</h3>
+            <div class="flex gap-4">
+                <button id="select-grocery-list-btn" class="flex-1 p-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-center">
+                    <span class="text-2xl">🛒</span>
+                    <p class="font-semibold mt-1">Grocery List</p>
+                </button>
+                <button id="select-shopping-list-btn" class="flex-1 p-4 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-center">
+                    <span class="text-2xl">🛍️</span>
+                    <p class="font-semibold mt-1">Shopping List</p>
+                </button>
+            </div>
+             <div class="flex justify-end">
+                <button id="cancel-select-list-type-btn" class="px-4 py-2 rounded-md font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Grocery List Modal -->
+    <div id="add-grocery-list-modal" class="fixed inset-0 z-30 hidden items-center justify-center modal-backdrop">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm m-4 p-6 space-y-4">
+            <h3 class="text-xl font-bold">New Grocery Date</h3>
+             <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Pick a Sunday</label>
+                <div id="add-list-date-options" class="grid grid-cols-2 gap-2">
+                    <!-- Date options will be injected here -->
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">List Color</label>
+                <div id="grocery-list-color-palette" class="color-palette grid grid-cols-7 gap-2">
+                    <!-- Color options will be injected here -->
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-add-grocery-list-btn" class="px-4 py-2 rounded-md font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">Cancel</button>
+                <button id="confirm-add-grocery-list-btn" class="px-4 py-2 rounded-md bg-blue-500 text-white font-semibold hover:bg-blue-600">Create</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Add Shopping List Modal -->
+    <div id="add-shopping-list-modal" class="fixed inset-0 z-30 hidden items-center justify-center modal-backdrop">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm m-4 p-6 space-y-4">
+            <h3 class="text-xl font-bold">New Shopping List</h3>
+            <input type="text" id="new-shopping-list-name" placeholder="e.g., Christmas Shopping" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">List Color</label>
+                <div id="shopping-list-color-palette" class="color-palette grid grid-cols-7 gap-2">
+                    <!-- Color options will be injected here -->
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-add-shopping-list-btn" class="px-4 py-2 rounded-md font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">Cancel</button>
+                <button id="confirm-add-shopping-list-btn" class="px-4 py-2 rounded-md bg-purple-500 text-white font-semibold hover:bg-purple-600">Create</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Add item to category modal (from category + button) -->
+    <div id="add-item-to-category-modal" class="fixed inset-0 z-30 hidden items-center justify-center modal-backdrop">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm m-4 p-6 space-y-4">
+            <h3 id="add-item-to-category-title" class="text-xl font-bold">Add Item</h3>
+            <input type="text" id="new-item-in-category-input" placeholder="Item Name" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-add-item-to-category-btn" class="px-4 py-2 rounded-md font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">Cancel</button>
+                <button id="confirm-add-item-to-category-btn" class="px-4 py-2 rounded-md bg-blue-500 text-white font-semibold hover:bg-blue-600">Add</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Add Item From FAB Modal -->
+    <div id="add-item-from-fab-modal" class="fixed inset-0 z-30 hidden items-center justify-center modal-backdrop">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm m-4 p-6 space-y-4">
+            <h3 class="text-xl font-bold">Add New Item</h3>
+            <div>
+                <label for="fab-item-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Item Name</label>
+                <input type="text" id="fab-item-name" placeholder="e.g., Milk" class="mt-1 w-full bg-gray-100 dark:bg-gray-700 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="fab-category-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+                <select id="fab-category-select" class="mt-1 w-full bg-gray-100 dark:bg-gray-700 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+            </div>
+            <div id="fab-new-category-container" class="hidden">
+                 <label for="fab-new-category-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">New Category Name</label>
+                <input type="text" id="fab-new-category-name" placeholder="e.g., Produce" class="mt-1 w-full bg-gray-100 dark:bg-gray-700 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-fab-add-item-btn" class="px-4 py-2 rounded-md font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">Cancel</button>
+                <button id="confirm-fab-add-item-btn" class="px-4 py-2 rounded-md bg-blue-500 text-white font-semibold hover:bg-blue-600">Add Item</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Edit Item Modal -->
+    <div id="edit-item-modal" class="fixed inset-0 z-30 hidden items-center justify-center modal-backdrop">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm m-4 p-6 space-y-4">
+            <h3 class="text-xl font-bold">Edit Item</h3>
+            <div>
+                <label for="edit-item-title" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Item Name</label>
+                <input type="text" id="edit-item-title" class="mt-1 w-full bg-gray-100 dark:bg-gray-700 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="edit-item-category-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+                <select id="edit-item-category-select" class="mt-1 w-full bg-gray-100 dark:bg-gray-700 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-edit-item-btn" class="px-4 py-2 rounded-md font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">Cancel</button>
+                <button id="save-edit-item-btn" class="px-4 py-2 rounded-md bg-blue-500 text-white font-semibold hover:bg-blue-600">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Categories Modal -->
+    <div id="manage-categories-modal" class="fixed inset-0 z-30 hidden items-center justify-center modal-backdrop">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md m-4 flex flex-col" style="height: 70vh;">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-xl font-bold">Manage Categories</h3>
+                <p class="text-sm text-gray-500">Drag to reorder. Click to edit name.</p>
+            </div>
+            <div id="category-editor-list" class="flex-grow p-4 space-y-2 overflow-y-auto">
+                <!-- Category editor items go here -->
+            </div>
+            <div class="p-4 border-t border-gray-200 dark:border-gray-700">
+                <form id="add-category-form" class="flex items-center gap-2">
+                    <input type="text" id="new-category-name" placeholder="New Category Name" class="flex-grow bg-gray-100 dark:bg-gray-700 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button type="submit" class="bg-blue-500 text-white font-semibold px-4 py-2 rounded-md hover:bg-blue-600">Add</button>
+                </form>
+            </div>
+            <div class="p-4 bg-gray-50 dark:bg-gray-800/50 flex justify-end">
+                 <button id="close-categories-modal-btn" class="px-4 py-2 rounded-md bg-gray-500 text-white font-semibold hover:bg-gray-600">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmation-modal" class="fixed inset-0 z-40 hidden items-center justify-center modal-backdrop">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm m-4 p-6 space-y-4">
+            <h3 id="confirmation-title" class="text-xl font-bold">Are you sure?</h3>
+            <p id="confirmation-message" class="text-gray-600 dark:text-gray-400"></p>
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-confirmation-btn" class="px-4 py-2 rounded-md font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">Cancel</button>
+                <button id="confirm-action-btn" class="px-4 py-2 rounded-md bg-red-500 text-white font-semibold hover:bg-red-600">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- OCR Status Modal -->
+    <div id="ocr-status-modal" class="fixed inset-0 z-40 hidden items-center justify-center modal-backdrop">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-xs m-4 p-6 text-center">
+            <div id="ocr-loader" class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p id="ocr-status-text" class="mt-4 text-lg font-semibold">Scanning Price...</p>
+        </div>
+    </div>
+
+    <!-- Checkout Modal -->
+    <div id="checkout-modal" class="fixed inset-0 z-30 hidden items-center justify-center modal-backdrop">
+        <div class="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm m-4 p-6 space-y-4 text-center">
+            <button id="close-checkout-modal-btn" class="absolute top-2 right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 class="text-2xl font-bold">Payment Ready</h3>
+            <p class="text-lg">Your total amount is:</p>
+            <p id="final-total" class="text-4xl font-extrabold text-blue-500">₱0.00</p>
+            <button id="close-checkout-btn" class="w-full mt-4 bg-gray-500 text-white font-bold py-2 rounded-lg hover:bg-gray-600 transition-colors">Done</button>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Constants ---
+            const COLORS = {
+                rose: 'bg-rose-400', pink: 'bg-pink-400', fuchsia: 'bg-fuchsia-400', purple: 'bg-purple-400',
+                violet: 'bg-violet-400', indigo: 'bg-indigo-400', blue: 'bg-blue-400', sky: 'bg-sky-400',
+                cyan: 'bg-cyan-400', teal: 'bg-teal-400', emerald: 'bg-emerald-400', lime: 'bg-lime-400',
+                amber: 'bg-amber-400', orange: 'bg-orange-400',
+            };
+            
+            // --- State Management ---
+            let state = {
+                items: [],
+                lists: [],
+                categories: [],
+                activeListId: null,
+                shoppingBasket: [],
+                editingItemId: null,
+                addingToCategoryId: null,
+            };
+
+            // --- DOM Elements ---
+            const sidebar = document.getElementById('sidebar');
+            const menuBtn = document.getElementById('menu-btn');
+            const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+            const myListsContainer = document.getElementById('my-lists');
+            const currentListTitle = document.getElementById('current-list-title');
+            const currentListColorDot = document.getElementById('current-list-color-dot');
+            const itemsContainer = document.getElementById('items-container');
+            
+            const addListBtn = document.getElementById('add-list-btn');
+            
+            const selectListTypeModal = document.getElementById('select-list-type-modal');
+            const selectGroceryListBtn = document.getElementById('select-grocery-list-btn');
+            const selectShoppingListBtn = document.getElementById('select-shopping-list-btn');
+            const cancelSelectListTypeBtn = document.getElementById('cancel-select-list-type-btn');
+
+            const addGroceryListModal = document.getElementById('add-grocery-list-modal');
+            const addListDateOptions = document.getElementById('add-list-date-options');
+            const cancelAddGroceryListBtn = document.getElementById('cancel-add-grocery-list-btn');
+            const confirmAddGroceryListBtn = document.getElementById('confirm-add-grocery-list-btn');
+            const groceryListColorPalette = document.getElementById('grocery-list-color-palette');
+            
+            const addShoppingListModal = document.getElementById('add-shopping-list-modal');
+            const newShoppingListNameInput = document.getElementById('new-shopping-list-name');
+            const shoppingListColorPalette = document.getElementById('shopping-list-color-palette');
+            const cancelAddShoppingListBtn = document.getElementById('cancel-add-shopping-list-btn');
+            const confirmAddShoppingListBtn = document.getElementById('confirm-add-shopping-list-btn');
+
+            const addItemToCategoryModal = document.getElementById('add-item-to-category-modal');
+            const addItemToCategoryTitle = document.getElementById('add-item-to-category-title');
+            const newItemInCategoryInput = document.getElementById('new-item-in-category-input');
+            const confirmAddItemToCategoryBtn = document.getElementById('confirm-add-item-to-category-btn');
+            const cancelAddItemToCategoryBtn = document.getElementById('cancel-add-item-to-category-btn');
+
+            const addItemFromFabModal = document.getElementById('add-item-from-fab-modal');
+            const fabItemNameInput = document.getElementById('fab-item-name');
+            const fabCategorySelect = document.getElementById('fab-category-select');
+            const fabNewCategoryContainer = document.getElementById('fab-new-category-container');
+            const fabNewCategoryNameInput = document.getElementById('fab-new-category-name');
+            const cancelFabAddItemBtn = document.getElementById('cancel-fab-add-item-btn');
+            const confirmFabAddItemBtn = document.getElementById('confirm-fab-add-item-btn');
+
+            const editItemModal = document.getElementById('edit-item-modal');
+            const editItemTitleInput = document.getElementById('edit-item-title');
+            const editItemCategorySelect = document.getElementById('edit-item-category-select');
+            const saveEditItemBtn = document.getElementById('save-edit-item-btn');
+            const cancelEditItemBtn = document.getElementById('cancel-edit-item-btn');
+            
+            const manageCategoriesBtn = document.getElementById('manage-categories-btn');
+            const manageCategoriesModal = document.getElementById('manage-categories-modal');
+            const closeCategoriesModalBtn = document.getElementById('close-categories-modal-btn');
+            const categoryEditorList = document.getElementById('category-editor-list');
+            const addCategoryForm = document.getElementById('add-category-form');
+            const newCategoryNameInput = document.getElementById('new-category-name');
+            const addNewItemFab = document.getElementById('add-new-item-fab');
+
+            const confirmationModal = document.getElementById('confirmation-modal');
+            const confirmationTitle = document.getElementById('confirmation-title');
+            const confirmationMessage = document.getElementById('confirmation-message');
+            const cancelConfirmationBtn = document.getElementById('cancel-confirmation-btn');
+            const confirmActionBtn = document.getElementById('confirm-action-btn');
+
+            const mainView = document.getElementById('main-view');
+            const groceryModeView = document.getElementById('grocery-mode-view');
+            const startShoppingBtn = document.getElementById('start-shopping-btn');
+            const exitShoppingBtn = document.getElementById('exit-shopping-btn');
+            const toBuyItemsContainer = document.getElementById('to-buy-items-container');
+            const toBuyTotalAmountEl = document.getElementById('to-buy-total-amount');
+            const basketItemsContainer = document.getElementById('basket-items-container');
+            const totalAmountEl = document.getElementById('total-amount');
+            const groceryListTitle = document.getElementById('grocery-list-title');
+            
+            const ocrStatusModal = document.getElementById('ocr-status-modal');
+            const ocrStatusText = document.getElementById('ocr-status-text');
+
+            const checkoutBtn = document.getElementById('checkout-btn');
+            const checkoutModal = document.getElementById('checkout-modal');
+            const finalTotalEl = document.getElementById('final-total');
+            const closeCheckoutBtn = document.getElementById('close-checkout-btn');
+            const closeCheckoutModalBtn = document.getElementById('close-checkout-modal-btn');
+
+
+            function saveData() {
+                localStorage.setItem('groceryListerApp', JSON.stringify({ items: state.items, lists: state.lists, categories: state.categories }));
+            }
+
+            function loadData() {
+                const data = localStorage.getItem('groceryListerApp');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    state.items = parsed.items || [];
+                    state.lists = parsed.lists || [];
+                    state.categories = parsed.categories || [];
+                    
+                    // Data migration for backward compatibility
+                    state.lists.forEach((list, index) => { 
+                        if (!list.color) list.color = 'blue'; 
+                        if (!list.type) list.type = 'grocery';
+                        if (!list.order) list.order = Date.now() - index; // Assign order to old lists
+                    });
+
+                    if (state.lists.length > 0 && !state.lists.find(l => l.id === state.activeListId)) {
+                        state.activeListId = state.lists[0].id;
+                    }
+                } else {
+                    // Default state for first time users
+                    const firstListDate = dayjs().day(7).format('YYYY-MM-DD');
+                    state.lists = [{ id: 1, name: `Grocery for ${dayjs(firstListDate).format('MMM D, YYYY')}`, color: 'blue', date: firstListDate, type: 'grocery', order: Date.now() }];
+                    state.categories = [
+                        { id: 1, listId: 1, name: 'Dairy', order: 0 },
+                        { id: 2, listId: 1, name: 'Bakery', order: 1 },
+                        { id: 3, listId: 1, name: 'Uncategorized', order: 999 }
+                    ];
+                    state.items = [
+                        { id: 1, listId: 1, title: 'Milk', completed: false, categoryId: 1, lastPrice: null },
+                        { id: 2, listId: 1, title: 'Bread', completed: false, categoryId: 2, lastPrice: null },
+                        { id: 3, listId: 1, title: 'Eggs (already bought)', completed: true, categoryId: 1, lastPrice: null }
+                    ];
+                    state.activeListId = 1;
+                    saveData();
+                }
+            }
+            
+            function render() {
+                if (!state.activeListId && state.lists.length > 0) {
+                    state.activeListId = state.lists[0].id;
+                }
+                if (state.activeListId) {
+                    ensureUncategorizedCategory();
+                }
+                renderLists();
+                renderItems();
+                updateActiveListTitle();
+            }
+
+            function renderLists() {
+                myListsContainer.innerHTML = state.lists
+                    .sort((a, b) => b.order - a.order) // Sort by order, newest first
+                    .map(list => {
+                        const count = state.items.filter(item => item.listId === list.id && !item.completed).length;
+                        const isActive = state.activeListId === list.id;
+                        
+                        const editButtonHTML = list.type === 'shopping' ? `
+                            <button class="edit-list-btn text-gray-400 hover:text-blue-500 p-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z"></path></svg>
+                            </button>
+                        ` : '';
+
+                        return `
+                            <div data-list-id="${list.id}" draggable="true" class="list-item group flex items-center justify-between p-2 rounded-lg cursor-pointer ${isActive ? 'bg-blue-500/20' : 'hover:bg-gray-300 dark:hover:bg-gray-700'}">
+                                <div class="flex items-center gap-2 flex-grow min-w-0">
+                                    <span class="list-drag-handle text-gray-400 hover:text-white">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                                    </span>
+                                    <span class="w-3 h-3 rounded-full ${COLORS[list.color] || COLORS['blue']} flex-shrink-0"></span>
+                                    <span class="list-name-text font-semibold truncate ${isActive ? 'text-blue-500' : ''}">${list.name}</span>
+                                </div>
+                                <div class="list-actions flex items-center">
+                                    <span class="text-gray-500 dark:text-gray-400 font-semibold mr-2">${count}</span>
+                                    ${editButtonHTML}
+                                    <button class="delete-list-btn text-gray-400 hover:text-red-500 p-1">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                
+                attachListActionListeners();
+                attachListDragAndDropListeners();
+            }
+
+            function attachListActionListeners() {
+                myListsContainer.addEventListener('click', (e) => {
+                    const listItem = e.target.closest('.list-item');
+                    if (!listItem) return;
+
+                    const listId = Number(listItem.dataset.listId);
+                    
+                    if (e.target.closest('.edit-list-btn')) {
+                        handleEditList(listItem, listId);
+                    } else if (e.target.closest('.delete-list-btn')) {
+                        const list = state.lists.find(l => l.id === listId);
+                        showConfirmation(
+                            `Delete "${list.name}"?`,
+                            "This will permanently delete the list and all its items.",
+                            () => deleteList(listId)
+                        );
+                    } else if (!e.target.closest('.list-actions') && !e.target.closest('.list-drag-handle')) { 
+                         state.activeListId = listId;
+                        if(window.innerWidth < 768) sidebar.classList.remove('open');
+                        render();
+                    }
+                });
+            }
+
+            function attachListDragAndDropListeners() {
+                const listItems = myListsContainer.querySelectorAll('.list-item');
+                let dragSrcEl = null;
+
+                listItems.forEach(item => {
+                    item.addEventListener('dragstart', (e) => {
+                        dragSrcEl = item;
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/html', item.innerHTML);
+                        setTimeout(() => item.classList.add('dragging'), 0);
+                    });
+
+                    item.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        const target = e.target.closest('.list-item');
+                        if (target && target !== dragSrcEl) {
+                           target.classList.add('drag-over');
+                        }
+                    });
+
+                    item.addEventListener('dragleave', (e) => {
+                        e.target.closest('.list-item')?.classList.remove('drag-over');
+                    });
+                    
+                    item.addEventListener('dragend', () => {
+                        listItems.forEach(i => i.classList.remove('dragging', 'drag-over'));
+                    });
+                    
+                    item.addEventListener('drop', (e) => {
+                        e.stopPropagation();
+                        if (dragSrcEl !== item) {
+                            const listNodes = Array.from(myListsContainer.children);
+                            const srcIndex = listNodes.indexOf(dragSrcEl);
+                            const dropIndex = listNodes.indexOf(item);
+                            
+                            if (srcIndex > dropIndex) {
+                                myListsContainer.insertBefore(dragSrcEl, item);
+                            } else {
+                                myListsContainer.insertBefore(dragSrcEl, item.nextSibling);
+                            }
+
+                            const newOrderedIds = Array.from(myListsContainer.children).map(node => Number(node.dataset.listId));
+                            const baseTimestamp = Date.now();
+                            newOrderedIds.reverse().forEach((id, index) => {
+                                const list = state.lists.find(l => l.id === id);
+                                if (list) list.order = baseTimestamp + index;
+                            });
+
+                            saveData();
+                            renderLists(); // Just re-render the list section
+                        }
+                    });
+                });
+            }
+
+            function handleEditList(listItem, listId) {
+                const nameEl = listItem.querySelector('.list-name-text');
+                const originalName = nameEl.textContent;
+                
+                const inputEl = document.createElement('input');
+                inputEl.type = 'text';
+                inputEl.value = originalName;
+                inputEl.className = 'font-semibold bg-white dark:bg-black border-b border-blue-500 focus:outline-none w-full';
+
+                nameEl.replaceWith(inputEl);
+                inputEl.focus();
+                inputEl.select();
+
+                const saveChanges = () => {
+                    const newName = inputEl.value.trim();
+                    const list = state.lists.find(l => l.id === listId);
+                    if (list && newName && newName !== originalName) {
+                        list.name = newName;
+                        saveData();
+                    }
+                    render(); // Re-render the entire list section
+                };
+
+                inputEl.addEventListener('blur', saveChanges);
+                inputEl.addEventListener('keydown', e => {
+                    if (e.key === 'Enter') inputEl.blur();
+                    if (e.key === 'Escape') {
+                        inputEl.value = originalName;
+                        inputEl.blur();
+                    }
+                });
+            }
+            
+            function deleteList(listId) {
+                state.lists = state.lists.filter(l => l.id !== listId);
+                state.items = state.items.filter(i => i.listId !== listId);
+                state.categories = state.categories.filter(c => c.listId !== listId);
+
+                if (state.activeListId === listId) {
+                    state.activeListId = state.lists.length > 0 ? state.lists[0].id : null;
+                }
+                saveData();
+                render();
+            }
+
+            function renderItems() {
+                if (!state.activeListId) {
+                    itemsContainer.innerHTML = `<div class="text-center py-10 text-gray-500"><p>Select or create a list to start.</p></div>`;
+                    startShoppingBtn.classList.add('hidden');
+                    return;
+                }
+                startShoppingBtn.classList.remove('hidden');
+
+                const categoriesInList = state.categories
+                    .filter(c => c.listId === state.activeListId)
+                    .sort((a, b) => a.order - b.order);
+
+                itemsContainer.innerHTML = '';
+                
+                categoriesInList.forEach(category => {
+                    const itemsInCategory = state.items.filter(i => i.listId === state.activeListId && i.categoryId === category.id);
+                    const activeItems = itemsInCategory.filter(i => !i.completed);
+                    const completedItems = itemsInCategory.filter(i => i.completed);
+
+                    const isUncategorized = category.name === 'Uncategorized';
+
+                    itemsContainer.innerHTML += `
+                        <div class="category-header-container group flex justify-between items-center mt-4">
+                            <div class="flex-grow flex items-center" data-category-id="${category.id}">
+                                <h3 class="category-title-text text-xl font-bold pb-1">${category.name}</h3>
+                                <button class="edit-category-btn text-gray-400 hover:text-blue-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity ${isUncategorized ? 'hidden' : ''}" data-category-id="${category.id}">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z"></path></svg>
+                                </button>
+                                <button class="delete-category-btn text-gray-400 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity ${isUncategorized ? 'hidden' : ''}" data-category-id="${category.id}">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </div>
+                            <button class="add-item-to-category-btn text-blue-500 hover:text-blue-600" data-category-id="${category.id}">
+                                <svg class="w-7 h-7" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd"></path></svg>
+                            </button>
+                        </div>`;
+                    
+                    if (itemsInCategory.length > 0) {
+                        itemsContainer.innerHTML += activeItems.map(createItemHTML).join('');
+                        if (completedItems.length > 0) {
+                            itemsContainer.innerHTML += '<div class="h-px bg-gray-300 dark:bg-gray-700 my-2"></div>';
+                            itemsContainer.innerHTML += completedItems.map(createItemHTML).join('');
+                        }
+                    }
+                });
+
+
+                if (state.categories.filter(c => c.listId === state.activeListId).length === 0) {
+                    itemsContainer.innerHTML = `<div class="text-center py-10 text-gray-500"><p>This list is empty. Add a category to start!</p></div>`;
+                }
+
+                document.querySelectorAll('.item-checkbox').forEach(checkbox => {
+                    checkbox.addEventListener('click', (e) => toggleItemComplete(Number(e.target.dataset.id)));
+                });
+                document.querySelectorAll('.edit-item-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => openEditItemModal(Number(e.currentTarget.dataset.id)));
+                });
+                document.querySelectorAll('.delete-item-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => deleteItem(Number(e.currentTarget.dataset.id)));
+                });
+                document.querySelectorAll('.add-item-to-category-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const categoryId = Number(e.currentTarget.dataset.categoryId);
+                        openAddItemToCategoryModal(categoryId);
+                    });
+                });
+                document.querySelectorAll('.edit-category-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => handleEditCategory(e.currentTarget));
+                });
+                document.querySelectorAll('.delete-category-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const categoryId = Number(e.currentTarget.dataset.categoryId);
+                        const category = state.categories.find(c => c.id === categoryId);
+                        showConfirmation(
+                            `Delete "${category.name}"?`,
+                            "All items in this category will be moved to 'Uncategorized'. This action cannot be undone.",
+                            () => deleteCategory(categoryId)
+                        );
+                    });
+                });
+            }
+
+            function createItemHTML(item) {
+                return `
+                <div class="item-container flex items-center bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm">
+                    <input type="checkbox" data-id="${item.id}" class="item-checkbox form-checkbox h-5 w-5 text-blue-500 rounded-full border-gray-400 dark:border-gray-500 bg-transparent focus:ring-blue-500" ${item.completed ? 'checked' : ''}>
+                    <p class="ml-4 flex-1 ${item.completed ? 'completed-text' : ''}">${item.title}</p>
+                    <div class="item-actions flex items-center space-x-2">
+                        <button class="edit-item-btn text-gray-400 hover:text-blue-500" data-id="${item.id}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z"></path></svg>
+                        </button>
+                        <button class="delete-item-btn text-gray-400 hover:text-red-500" data-id="${item.id}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                </div>`;
+            }
+
+            function updateActiveListTitle() {
+                if (!state.activeListId) {
+                    currentListTitle.textContent = "No List Selected";
+                    currentListColorDot.classList.add('hidden');
+                    return;
+                }
+                const list = state.lists.find(l => l.id === state.activeListId);
+                if (list) {
+                    currentListTitle.textContent = list.name;
+                    currentListColorDot.className = `w-4 h-4 rounded-full ${COLORS[list.color] || COLORS['blue']} flex-shrink-0`;
+                    currentListColorDot.classList.remove('hidden');
+                    addNewItemFab.className = `absolute bottom-6 right-6 ${COLORS[list.color]} hover:opacity-80 text-white font-bold w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform transform hover:scale-110`;
+                } else {
+                    currentListTitle.textContent = 'List not found';
+                    currentListColorDot.classList.add('hidden');
+                }
+            }
+
+            function addItemToCategory(title, categoryId) {
+                 if (!title.trim() || !state.activeListId) return;
+                 const newItem = {
+                    id: Date.now(),
+                    listId: state.activeListId,
+                    title: title.trim(),
+                    categoryId: categoryId,
+                    completed: false,
+                    lastPrice: null,
+                };
+                state.items.push(newItem);
+                saveData();
+                render();
+            }
+            
+            function toggleItemComplete(id) {
+                const item = state.items.find(i => i.id === id);
+                if (item) {
+                    item.completed = !item.completed;
+                    saveData();
+                    render();
+                }
+            }
+            
+            function deleteItem(id) {
+                state.items = state.items.filter(i => i.id !== id);
+                saveData();
+                render();
+            }
+            
+            function openAddItemToCategoryModal(categoryId) {
+                const category = state.categories.find(c => c.id === categoryId);
+                if (category) {
+                    state.addingToCategoryId = categoryId;
+                    addItemToCategoryTitle.textContent = `Add item to "${category.name}"`;
+                    addItemToCategoryModal.classList.remove('hidden');
+                    addItemToCategoryModal.classList.add('flex');
+                    newItemInCategoryInput.focus();
+                }
+            }
+
+            function closeAddItemToCategoryModal() {
+                state.addingToCategoryId = null;
+                newItemInCategoryInput.value = '';
+                addItemToCategoryModal.classList.add('hidden');
+                addItemToCategoryModal.classList.remove('flex');
+            }
+
+            function openEditItemModal(id) {
+                const item = state.items.find(i => i.id === id);
+                if (item) {
+                    state.editingItemId = id;
+                    editItemTitleInput.value = item.title;
+                    
+                    const categoriesInList = state.categories.filter(c => c.listId === state.activeListId).sort((a,b)=> a.order - b.order);
+                    editItemCategorySelect.innerHTML = categoriesInList.map(c => `<option value="${c.id}" ${c.id === item.categoryId ? 'selected' : ''}>${c.name}</option>`).join('');
+
+                    editItemModal.classList.remove('hidden');
+                    editItemModal.classList.add('flex');
+                }
+            }
+
+            function closeEditItemModal() {
+                state.editingItemId = null;
+                editItemModal.classList.add('hidden');
+                editItemModal.classList.remove('flex');
+            }
+
+            function saveEditedItem() {
+                if (state.editingItemId === null) return;
+                const item = state.items.find(i => i.id === state.editingItemId);
+                if (item) {
+                    item.title = editItemTitleInput.value.trim();
+                    item.categoryId = Number(editItemCategorySelect.value);
+                    saveData();
+                    render();
+                }
+                closeEditItemModal();
+            }
+            
+            // --- Category Management ---
+
+            function ensureUncategorizedCategory() {
+                if (!state.activeListId) return;
+                const hasUncategorized = state.categories.some(c => c.listId === state.activeListId && c.name === 'Uncategorized');
+                if (!hasUncategorized) {
+                    state.categories.push({
+                        id: Date.now(),
+                        listId: state.activeListId,
+                        name: 'Uncategorized',
+                        order: 999 
+                    });
+                    saveData();
+                }
+            }
+            
+            function openCategoryManager() {
+                if(!state.activeListId) {
+                    alert('Please select a list first.');
+                    return;
+                }
+                renderCategoryManager();
+                manageCategoriesModal.classList.remove('hidden');
+                manageCategoriesModal.classList.add('flex');
+            }
+
+            function closeCategoryManager() {
+                manageCategoriesModal.classList.add('hidden');
+                manageCategoriesModal.classList.remove('flex');
+                render(); // Re-render main list in case order changed
+            }
+
+            function handleEditCategory(button) {
+                const categoryId = Number(button.dataset.categoryId);
+                const headerDiv = button.closest('.category-header-container').querySelector('[data-category-id]');
+                const titleEl = headerDiv.querySelector('.category-title-text');
+                const originalName = titleEl.textContent;
+
+                const inputEl = document.createElement('input');
+                inputEl.type = 'text';
+                inputEl.value = originalName;
+                inputEl.className = 'text-xl font-bold bg-white dark:bg-black border-b border-blue-500 focus:outline-none pb-1';
+                
+                titleEl.replaceWith(inputEl);
+                inputEl.focus();
+                inputEl.select();
+
+                const saveChanges = () => {
+                    const newName = inputEl.value.trim();
+                    if (newName && newName !== originalName) {
+                        const category = state.categories.find(c => c.id === categoryId);
+                        if (category) {
+                            category.name = newName;
+                            saveData();
+                        }
+                    }
+                    renderItems(); 
+                };
+
+                inputEl.addEventListener('blur', saveChanges);
+                inputEl.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        inputEl.blur(); 
+                    } else if (e.key === 'Escape') {
+                        inputEl.value = originalName;
+                        inputEl.blur();
+                    }
+                });
+            }
+
+            function renderCategoryManager() {
+                const categoriesInList = state.categories.filter(c => c.listId === state.activeListId).sort((a,b)=> a.order - b.order);
+                categoryEditorList.innerHTML = categoriesInList.map(c => {
+                    const isUncategorized = c.name === 'Uncategorized';
+                    return `
+                    <div class="category-editor-item flex items-center bg-gray-100 dark:bg-gray-700 p-2 rounded-lg" draggable="${!isUncategorized}" data-category-id="${c.id}">
+                        <span class="drag-handle cursor-move text-gray-400 mr-2 ${isUncategorized ? 'opacity-0' : 'opacity-0'}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                        </span>
+                        <input type="text" value="${c.name}" data-category-id="${c.id}" class="category-name-input flex-grow bg-transparent focus:outline-none focus:bg-white dark:focus:bg-black rounded px-1" ${isUncategorized ? 'disabled' : ''}>
+                        <button class="delete-category-btn text-gray-400 hover:text-red-500 ml-2 ${isUncategorized ? 'hidden' : ''}" data-category-id="${c.id}">
+                           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                `}).join('');
+                attachCategoryEditorListeners();
+            }
+
+            function attachCategoryEditorListeners() {
+                document.querySelectorAll('.category-name-input').forEach(input => {
+                    input.addEventListener('change', (e) => {
+                        const newName = e.target.value.trim();
+                        const categoryId = Number(e.target.dataset.categoryId);
+                        if (newName) {
+                            const category = state.categories.find(c => c.id === categoryId);
+                            if(category) {
+                                category.name = newName;
+                                saveData();
+                            }
+                        } else {
+                            // revert if empty
+                            e.target.value = state.categories.find(c => c.id === categoryId).name;
+                        }
+                    });
+                });
+                
+                document.querySelectorAll('.delete-category-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const categoryId = Number(e.currentTarget.dataset.categoryId);
+                        deleteCategory(categoryId);
+                    });
+                });
+                
+                // Drag and drop listeners
+                const items = categoryEditorList.querySelectorAll('.category-editor-item');
+                let dragSrcEl = null;
+
+                function handleDragStart(e) {
+                    dragSrcEl = this;
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/html', this.innerHTML);
+                    this.classList.add('dragging');
+                }
+
+                function handleDragOver(e) {
+                    if (e.preventDefault) e.preventDefault();
+                    this.classList.add('drag-over');
+                    return false;
+                }
+                
+                function handleDragLeave(e) {
+                    this.classList.remove('drag-over');
+                }
+
+                function handleDrop(e) {
+                    if (e.stopPropagation) e.stopPropagation();
+                    if (dragSrcEl !== this) {
+                        const allCats = Array.from(categoryEditorList.querySelectorAll('[draggable="true"]'));
+                        const srcIndex = allCats.indexOf(dragSrcEl);
+                        const dropIndex = allCats.indexOf(this);
+                        
+                        const [removed] = allCats.splice(srcIndex, 1);
+                        allCats.splice(dropIndex, 0, removed);
+                        
+                        allCats.forEach((el, index) => {
+                           const catId = Number(el.dataset.categoryId);
+                           const category = state.categories.find(c => c.id === catId);
+                           if(category) category.order = index;
+                        });
+
+                        saveData();
+                        renderCategoryManager();
+                    }
+                    return false;
+                }
+                
+                function handleDragEnd(e) {
+                    items.forEach(item => {
+                        item.classList.remove('dragging', 'drag-over');
+                    });
+                }
+                
+                items.forEach(item => {
+                    if (item.draggable) {
+                        item.addEventListener('dragstart', handleDragStart, false);
+                        item.addEventListener('dragover', handleDragOver, false);
+                        item.addEventListener('dragleave', handleDragLeave, false);
+                        item.addEventListener('drop', handleDrop, false);
+                        item.addEventListener('dragend', handleDragEnd, false);
+                    }
+                });
+            }
+
+            function addCategory(name) {
+                if (!name.trim() || !state.activeListId) return null;
+                const categoriesInList = state.categories.filter(c => c.listId === state.activeListId);
+                const maxOrder = Math.max(-1, ...categoriesInList.filter(c => c.order < 999).map(c => c.order));
+
+                const newCategory = {
+                    id: Date.now(),
+                    listId: state.activeListId,
+                    name: name.trim(),
+                    order: maxOrder + 1
+                };
+                state.categories.push(newCategory);
+                saveData();
+                return newCategory;
+            }
+
+            function deleteCategory(categoryId) {
+                const uncategorized = state.categories.find(c => c.listId === state.activeListId && c.name === 'Uncategorized');
+                if (!uncategorized) {
+                    ensureUncategorizedCategory();
+                    deleteCategory(categoryId); // try again
+                    return;
+                }
+                state.items.forEach(item => {
+                    if (item.categoryId === categoryId) { item.categoryId = uncategorized.id; }
+                });
+                state.categories = state.categories.filter(c => c.id !== categoryId);
+                saveData();
+                render(); 
+            }
+
+
+            // --- Grocery Mode Functions ---
+
+            function enterGroceryMode() {
+                state.shoppingBasket = [];
+                mainView.classList.add('hidden');
+                groceryModeView.classList.remove('hidden');
+                groceryModeView.classList.add('flex');
+                
+                const list = state.lists.find(l => l.id === state.activeListId);
+                groceryListTitle.textContent = list.name;
+
+                renderShoppingLists();
+            }
+
+            function exitShoppingMode() {
+                mainView.classList.remove('hidden');
+                groceryModeView.classList.add('hidden');
+                groceryModeView.classList.remove('flex');
+                state.shoppingBasket = [];
+                render(); 
+            }
+
+            function renderShoppingLists() {
+                const categoriesInList = state.categories.filter(c => c.listId === state.activeListId).sort((a, b) => a.order - b.order);
+                toBuyItemsContainer.innerHTML = '';
+
+                categoriesInList.forEach(category => {
+                    const itemsInCategory = state.items.filter(i => i.listId === state.activeListId && i.categoryId === category.id);
+                    if (itemsInCategory.length > 0) {
+                        toBuyItemsContainer.innerHTML += `<h4 class="text-lg font-bold mt-4 first:mt-0">${category.name}</h4>`;
+                        toBuyItemsContainer.innerHTML += itemsInCategory.map(createToBuyItemHTML).join('');
+                    }
+                });
+                
+                if (state.items.filter(i => i.listId === state.activeListId).length === 0) {
+                    toBuyItemsContainer.innerHTML = `<p class="text-gray-500 text-center">Your list is empty.</p>`;
+                }
+                
+                basketItemsContainer.innerHTML = state.shoppingBasket.length ? state.shoppingBasket.map(createBasketItemHTML).join('') : `<p class="text-gray-500 text-center">Your basket is empty.</p>`;
+                
+                updateTotal();
+                attachShoppingListeners();
+            }
+
+            function createToBuyItemHTML(item) {
+                if (item.completed) { // Item is in the basket
+                    return `
+                    <div class="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm opacity-50" data-id="${item.id}">
+                        <p class="text-lg font-semibold completed-text">${item.title}</p>
+                        <div class="flex items-center justify-center mt-2 gap-2 text-green-500 font-bold">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span>In Basket</span>
+                        </div>
+                    </div>`;
+                }
+
+                return `
+                <div class="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm" data-id="${item.id}">
+                    <p class="text-lg font-semibold">${item.title}</p>
+                    <div class="flex items-center justify-between mt-2 gap-2">
+                        <div class="flex items-center gap-2">
+                           <input type="number" class="manual-price-input w-20 bg-gray-200 dark:bg-gray-700 rounded p-1 text-center" placeholder="Price" value="${item.lastPrice || ''}">
+                            <label class="scan-btn-label cursor-pointer bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
+                                <input type="file" accept="image/*" class="scan-input">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                            </label>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <label>Qty:</label>
+                            <input type="number" value="1" min="1" class="quantity-input w-14 bg-gray-200 dark:bg-gray-700 rounded p-1 text-center">
+                        </div>
+                        <button class="add-to-basket-btn bg-green-500 text-white p-2 rounded hover:bg-green-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                        </button>
+                    </div>
+                </div>`;
+            }
+
+            function createBasketItemHTML(item) {
+                return `
+                <div class="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm flex justify-between items-center">
+                    <div>
+                        <p class="font-semibold">${item.title}</p>
+                        <p class="text-sm text-gray-500">${item.quantity} x ₱${item.price.toFixed(2)}</p>
+                    </div>
+                    <p class="font-bold text-lg">₱${(item.quantity * item.price).toFixed(2)}</p>
+                </div>
+                `;
+            }
+            
+            function updateTotal() {
+                const total = state.shoppingBasket.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                totalAmountEl.textContent = `₱${total.toFixed(2)}`;
+                
+                const toBuyTotal = state.items
+                    .filter(i => i.listId === state.activeListId && !i.completed && i.lastPrice)
+                    .reduce((sum, item) => sum + item.lastPrice, 0);
+                toBuyTotalAmountEl.textContent = `₱${toBuyTotal.toFixed(2)}`;
+            }
+
+            function attachShoppingListeners() {
+                document.querySelectorAll('.add-to-basket-btn').forEach(btn => {
+                    btn.addEventListener('click', handleAddToBasket);
+                });
+                document.querySelectorAll('.scan-input').forEach(input => {
+                    input.addEventListener('change', handleScanPrice);
+                });
+            }
+
+            function handleAddToBasket(e) {
+                const itemEl = e.currentTarget.closest('[data-id]');
+                const id = Number(itemEl.dataset.id);
+                const originalItem = state.items.find(i => i.id === id);
+                const priceInput = itemEl.querySelector('.manual-price-input');
+                const quantityInput = itemEl.querySelector('.quantity-input');
+                
+                const price = parseFloat(priceInput.value);
+                const quantity = parseInt(quantityInput.value);
+
+                if (originalItem && !isNaN(price) && price > 0 && !isNaN(quantity) && quantity > 0) {
+                    state.shoppingBasket.push({
+                        ...originalItem,
+                        price,
+                        quantity,
+                    });
+                    originalItem.completed = true;
+                    originalItem.lastPrice = price; // Remember the price
+                    saveData();
+                    renderShoppingLists();
+                } else {
+                    alert('Please enter a valid price and quantity.');
+                }
+            }
+
+            async function handleScanPrice(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const itemEl = e.currentTarget.closest('[data-id]');
+                const priceInput = itemEl.querySelector('.manual-price-input');
+                
+                ocrStatusModal.classList.remove('hidden');
+                ocrStatusModal.classList.add('flex');
+                
+                try {
+                    const { data: { text } } = await Tesseract.recognize(file, 'eng');
+                    const priceMatch = text.match(/(\d+\.\d{2})/);
+                    
+                    if (priceMatch && priceMatch[0]) {
+                        priceInput.value = priceMatch[0];
+                        ocrStatusText.textContent = "Price Found!";
+                    } else {
+                        ocrStatusText.textContent = "No price found. Please enter manually.";
+                    }
+                } catch (error) {
+                    console.error('OCR Error:', error);
+                    ocrStatusText.textContent = "Scan failed. Please try again.";
+                }
+
+                setTimeout(() => {
+                    ocrStatusModal.classList.add('hidden');
+                    ocrStatusModal.classList.remove('flex');
+                    ocrStatusText.textContent = "Scanning Price...";
+                }, 2000);
+            }
+            
+            function showConfirmation(title, message, onConfirm) {
+                confirmationTitle.textContent = title;
+                confirmationMessage.textContent = message;
+                confirmationModal.classList.remove('hidden');
+                confirmationModal.classList.add('flex');
+
+                let confirmHandler; 
+
+                const cleanup = () => {
+                    confirmActionBtn.removeEventListener('click', confirmHandler);
+                    cancelConfirmationBtn.removeEventListener('click', cancelHandler);
+                };
+
+                const cancelHandler = () => { hideConfirmation(); cleanup(); };
+
+                confirmHandler = () => {
+                    onConfirm();
+                    hideConfirmation();
+                    cleanup();
+                };
+
+                confirmActionBtn.addEventListener('click', confirmHandler);
+                cancelConfirmationBtn.addEventListener('click', cancelHandler);
+            }
+
+            function hideConfirmation() {
+                confirmationModal.classList.add('hidden');
+                confirmationModal.classList.remove('flex');
+            }
+            
+            function handleCloseCheckout() {
+                checkoutModal.classList.add('hidden');
+                checkoutModal.classList.remove('flex');
+                exitShoppingMode();
+                saveData(); // Save the final state with the completed items.
+            }
+
+            function generateColorPalette(container) {
+                 container.innerHTML = Object.keys(COLORS).map((color) => 
+                    `<div class="color-option w-8 h-8 rounded-full cursor-pointer ${COLORS[color]}" data-color="${color}" style="--tw-color-blue-500: ${color}"></div>`
+                ).join('');
+                const firstColor = container.querySelector('.color-option');
+                if (firstColor) firstColor.classList.add('selected');
+
+                container.querySelectorAll('.color-option').forEach(el => {
+                    el.addEventListener('click', () => {
+                        container.querySelector('.selected')?.classList.remove('selected');
+                        el.classList.add('selected');
+                    });
+                });
+            }
+
+            // --- Event Listeners & Init ---
+            menuBtn.addEventListener('click', () => sidebar.classList.add('open'));
+            closeSidebarBtn.addEventListener('click', () => sidebar.classList.remove('open'));
+            
+            addListBtn.addEventListener('click', () => {
+                selectListTypeModal.classList.remove('hidden');
+                selectListTypeModal.classList.add('flex');
+            });
+            
+            cancelSelectListTypeBtn.addEventListener('click', () => {
+                selectListTypeModal.classList.add('hidden');
+                selectListTypeModal.classList.remove('flex');
+            });
+
+            selectGroceryListBtn.addEventListener('click', () => {
+                selectListTypeModal.classList.add('hidden');
+                selectListTypeModal.classList.remove('flex');
+                
+                let firstSunday;
+                if (dayjs().day() === 0) { // It's Sunday today
+                    firstSunday = dayjs();
+                } else { // It's not Sunday
+                    firstSunday = dayjs().day(7);
+                }
+                
+                let dateOptionsHTML = '';
+                for (let i = 0; i < 4; i++) {
+                    const sunday = firstSunday.add(i * 7, 'days');
+                    const isSuggested = i === 0;
+                    const label = isSuggested ? (dayjs().day() === 0 ? 'Today: ' : 'Upcoming: ') : '';
+                    dateOptionsHTML += `
+                        <button class="date-option p-2 border rounded-md text-sm ${isSuggested ? 'selected' : ''}" data-date="${sunday.format('YYYY-MM-DD')}">
+                           ${label}${sunday.format('MMM D')}
+                        </button>`;
+                }
+                addListDateOptions.innerHTML = dateOptionsHTML;
+                
+                addListDateOptions.querySelectorAll('.date-option').forEach(el => {
+                    el.addEventListener('click', () => {
+                        addListDateOptions.querySelector('.selected')?.classList.remove('selected');
+                        el.classList.add('selected');
+                    });
+                });
+
+                generateColorPalette(groceryListColorPalette);
+                addGroceryListModal.classList.remove('hidden');
+                addGroceryListModal.classList.add('flex');
+            });
+            
+            selectShoppingListBtn.addEventListener('click', () => {
+                selectListTypeModal.classList.add('hidden');
+                selectListTypeModal.classList.remove('flex');
+                generateColorPalette(shoppingListColorPalette);
+                newShoppingListNameInput.value = '';
+                addShoppingListModal.classList.remove('hidden');
+                addShoppingListModal.classList.add('flex');
+                newShoppingListNameInput.focus();
+            });
+
+            cancelAddGroceryListBtn.addEventListener('click', () => {
+                addGroceryListModal.classList.add('hidden');
+                addGroceryListModal.classList.remove('flex');
+            });
+            
+            confirmAddGroceryListBtn.addEventListener('click', () => {
+                const selectedDateEl = addListDateOptions.querySelector('.selected');
+                const selectedColorEl = groceryListColorPalette.querySelector('.selected');
+                
+                if (selectedDateEl && selectedColorEl) {
+                    const date = selectedDateEl.dataset.date;
+                    const dateExists = state.lists.some(list => list.date === date);
+
+                    if (dateExists) {
+                        alert('A grocery list for this date already exists.');
+                        return;
+                    }
+
+                    const color = selectedColorEl.dataset.color;
+                    const listName = `Grocery for ${dayjs(date).format('MMM D, YYYY')}`;
+
+                    const newList = { id: Date.now(), name: listName, color, date, type: 'grocery', order: Date.now() };
+                    state.lists.push(newList);
+                    
+                    if (state.activeListId) {
+                        const categoriesToCopy = state.categories.filter(c => c.listId === state.activeListId);
+                        categoriesToCopy.forEach((c) => {
+                            state.categories.push({ ...c, id: Date.now() + Math.random(), listId: newList.id });
+                        });
+                    }
+                    
+                    state.activeListId = newList.id;
+                    saveData();
+                    render();
+                    addGroceryListModal.classList.add('hidden');
+                    addGroceryListModal.classList.remove('flex');
+                } else {
+                    alert("Please select a date and color.");
+                }
+            });
+
+            cancelAddShoppingListBtn.addEventListener('click', () => {
+                addShoppingListModal.classList.add('hidden');
+                addShoppingListModal.classList.remove('flex');
+            });
+
+            confirmAddShoppingListBtn.addEventListener('click', () => {
+                const listName = newShoppingListNameInput.value.trim();
+                const selectedColorEl = shoppingListColorPalette.querySelector('.selected');
+                
+                if (listName && selectedColorEl) {
+                    const color = selectedColorEl.dataset.color;
+                    const newList = { id: Date.now(), name: listName, color, type: 'shopping', order: Date.now() };
+                    state.lists.push(newList);
+                    
+                    if (state.activeListId) {
+                        const categoriesToCopy = state.categories.filter(c => c.listId === state.activeListId);
+                        categoriesToCopy.forEach((c) => {
+                            state.categories.push({ ...c, id: Date.now() + Math.random(), listId: newList.id });
+                        });
+                    }
+
+                    state.activeListId = newList.id;
+                    saveData();
+                    render();
+                    addShoppingListModal.classList.add('hidden');
+                    addShoppingListModal.classList.remove('flex');
+                } else {
+                    alert("Please enter a name and select a color.");
+                }
+            });
+
+
+            confirmAddItemToCategoryBtn.addEventListener('click', () => {
+                const title = newItemInCategoryInput.value;
+                if (title && state.addingToCategoryId) {
+                    addItemToCategory(title, state.addingToCategoryId);
+                }
+                closeAddItemToCategoryModal();
+            });
+            cancelAddItemToCategoryBtn.addEventListener('click', closeAddItemToCategoryModal);
+            
+            saveEditItemBtn.addEventListener('click', saveEditedItem);
+            cancelEditItemBtn.addEventListener('click', closeEditItemModal);
+
+            manageCategoriesBtn.addEventListener('click', openCategoryManager);
+            closeCategoriesModalBtn.addEventListener('click', closeCategoryManager);
+            addCategoryForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const newName = newCategoryNameInput.value;
+                if(addCategory(newName)){
+                    newCategoryNameInput.value = '';
+                    renderCategoryManager();
+                }
+            });
+
+            addNewItemFab.addEventListener('click', () => {
+                if (!state.activeListId) {
+                    alert("Please select a list first.");
+                    return;
+                }
+                const categoriesInList = state.categories.filter(c => c.listId === state.activeListId).sort((a,b) => a.order - b.order);
+                fabCategorySelect.innerHTML = categoriesInList.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                fabCategorySelect.innerHTML += `<option value="new">-- New Category --</option>`;
+                fabNewCategoryContainer.classList.add('hidden');
+                fabNewCategoryNameInput.value = '';
+                fabItemNameInput.value = '';
+                
+                addItemFromFabModal.classList.remove('hidden');
+                addItemFromFabModal.classList.add('flex');
+                fabItemNameInput.focus();
+            });
+
+            fabCategorySelect.addEventListener('change', (e) => {
+                if (e.target.value === 'new') {
+                    fabNewCategoryContainer.classList.remove('hidden');
+                } else {
+                    fabNewCategoryContainer.classList.add('hidden');
+                }
+            });
+            
+            cancelFabAddItemBtn.addEventListener('click', () => {
+                addItemFromFabModal.classList.add('hidden');
+                addItemFromFabModal.classList.remove('flex');
+            });
+
+            confirmFabAddItemBtn.addEventListener('click', () => {
+                const itemName = fabItemNameInput.value.trim();
+                const categoryValue = fabCategorySelect.value;
+                
+                if (!itemName) {
+                    alert('Please enter an item name.');
+                    return;
+                }
+
+                let categoryId;
+                if (categoryValue === 'new') {
+                    const newCategoryName = fabNewCategoryNameInput.value.trim();
+                    if (!newCategoryName) {
+                        alert('Please enter a new category name.');
+                        return;
+                    }
+                    const newCategory = addCategory(newCategoryName);
+                    categoryId = newCategory.id;
+                } else {
+                    categoryId = Number(categoryValue);
+                }
+
+                addItemToCategory(itemName, categoryId);
+                addItemFromFabModal.classList.add('hidden');
+                addItemFromFabModal.classList.remove('flex');
+            });
+
+
+            startShoppingBtn.addEventListener('click', enterGroceryMode);
+            exitShoppingBtn.addEventListener('click', exitShoppingMode);
+            
+            checkoutBtn.addEventListener('click', () => {
+                finalTotalEl.textContent = totalAmountEl.textContent;
+                checkoutModal.classList.remove('hidden');
+                checkoutModal.classList.add('flex');
+            });
+
+            closeCheckoutBtn.addEventListener('click', handleCloseCheckout);
+            closeCheckoutModalBtn.addEventListener('click', () => {
+                checkoutModal.classList.add('hidden');
+                checkoutModal.classList.remove('flex');
+            });
+
+            // Initial Load
+            loadData();
+            render();
+        });
+    </script>
+</body>
+</html>
+
